@@ -40,8 +40,9 @@
           if(t.pinch&&!t.wasPinch&&!t.consumed)this.emit('pinchStart',t);
           if(t.pinch&&!t.consumed)this.emit('pinchMove',t);
           if(!t.pinch&&t.wasPinch&&!t.consumed)this.emit('pinchEnd',t);
-          if(!t.pinch){t.consumed=false;if(next.length===1)this.emit('guide',t);}
+          if(!t.pinch)t.consumed=false;
         }
+        if(next.length&&next.every(t=>!t.pinch&&!t.wasPinch))this.emit('guide',next.reduce((a,b)=>a.id<b.id?a:b));
       }
       this.emit('hands',next);
     }

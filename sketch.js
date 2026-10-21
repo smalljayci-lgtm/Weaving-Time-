@@ -7,8 +7,7 @@
   let paused=reduced,time=0,pointer={x:-100,y:-100},lastStatus='',resizeTimer,toastTimer;
   let canvasElement,entered=false;
   let handControl,breathControl,handPoints=[],handGrabs=[],handAnchors=new Map(),weaveQueue=[],guideTarget=null,lastGuide=0;
-  let wovenThreads=[],manualWeave=null;
-  function repairBusy(){return web&&(web.broken.length>0||spider.target||spider.repairing);}
+  let wovenThreads=[],manualWeave=null,repairReturn=null,guideUntil=0;
   function showLaunch(show){
     if(show){handControl?.stop();breathControl?.stop();}
     entered=!show;drag=null;hover=null;
@@ -25,7 +24,7 @@
   }
   function toast(message){$('toast').textContent=message;$('toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('visible'),2800);}
   function newWorld(w,h){
-    handControl?.cancelInteraction();breathControl?.resetGate();weaveQueue=[];wovenThreads=[];manualWeave=null;guideTarget=null;
+    handControl?.cancelInteraction();breathControl?.resetGate();weaveQueue=[];wovenThreads=[];manualWeave=null;repairReturn=null;guideTarget=null;guideUntil=0;
     web=new SilkWeb(w,h,1701);drag=null;hover=null;ripples=[];scraps=[];
     spider={node:web.nearest(w*.66,h*.65,Infinity),path:[],next:null,walkEdge:null,progress:0,target:null,approach:null,repairing:false,repairProgress:0,x:0,y:0,angle:0,wait:1};
     spider.x=spider.node.x;spider.y=spider.node.y;
@@ -53,7 +52,6 @@
     return false;
   }
   function queueWeave(a,b){
-    if(repairBusy()){handControl?.hint('蜘蛛正在修补破口，补好后再牵新丝');return false;}
     if(a===b||Math.hypot(a.x-b.x,a.y-b.y)<28){handControl?.hint('移动远一点，再松开手指');return false;}
     if(weaveQueue.length>=6){handControl?.hint('小蜘蛛正在忙，等它织完几根丝');return false;}
     let edge=a.adj.find(e=>e.a===b||e.b===b)||wovenThreads.find(e=>(e.a===a&&e.b===b)||(e.a===b&&e.b===a));
@@ -63,8 +61,8 @@
     // a spring or a repair target in the original web.
     if(!edge){edge={a,b,rest:Math.hypot(a.x-b.x,a.y-b.y),kind:'woven',active:false,pending:true,age:999};wovenThreads.push(edge);}
     if(!weaveQueue.includes(edge)&&manualWeave?.edge!==edge)weaveQueue.push(edge);
-    if(!spider.target)spider.path=[];
-    guideTarget=null;handControl?.hint('已交给小蜘蛛，正在赶来牵丝');addRipple(a.x,a.y);return true;
+    if(!spider.target&&!manualWeave)spider.path=[];
+    guideTarget=null;guideUntil=0;handControl?.hint('已交给小蜘蛛，优先牵起这根丝');addRipple(a.x,a.y);return true;
   }
   function routeToWeave(){
     for(let i=0;i<weaveQueue.length;i++){
@@ -77,19 +75,25 @@
   }
   function setupHands(){
     const position=t=>({x:t.point.x*web.w,y:t.point.y*web.h});
+    const grabHands=tracks=>{
+      guideTarget=null;guideUntil=0;
+      handAnchors.clear();const selected=new Set();handGrabs=[];
+      for(const t of tracks){const p=position(t),node=web.nearest(p.x,p.y,90);if(node&&!selected.has(node.id)){selected.add(node.id);handGrabs.push({id:t.id,node,...p});}}
+      if(handGrabs.length!==2){handGrabs=[];handControl.hint('双手稍微分开，再捏住蛛网');}
+    };
     handControl=new HandController({
       isInteractive:()=>entered&&!paused,
       modeChanged:updateInputMode,
-      hands:hands=>{handPoints=hands;if(!hands.length&&handControl?.enabled)handControl.hint('让双手进入画面');},
+      hands:hands=>{handPoints=hands;if(!hands.length){guideTarget=null;guideUntil=0;if(handControl?.enabled)handControl.hint('让双手进入画面');}},
       guide:t=>{
-        if(repairBusy()){handControl.hint('正在修补，食指引导会在补好后恢复');return;}
+        guideUntil=performance.now()+650;
         if(performance.now()-lastGuide<350)return;lastGuide=performance.now();
         const p=position(t),n=web.nearest(p.x,p.y,100);
-        if(n&&Math.hypot(n.x-spider.x,n.y-spider.y)>18)guideTarget=n;
+        if(n)guideTarget=n;
         handControl.hint('食指引路 · 捏合后移动，松开牵丝');
       },
       pinchStart:t=>{
-        if(repairBusy()){handControl.hint('蜘蛛正在修补破口，补好后再牵新丝');return;}
+        guideTarget=null;guideUntil=0;
         const p=position(t),node=web.nearest(p.x,p.y,100);
         if(node){handAnchors.set(t.id,{node,point:p});addRipple(node.x,node.y);handControl.hint('已捏住起点，移动后松开');}
       },
@@ -99,14 +103,9 @@
         const p=position(t),b=web.nearest(p.x,p.y,100);if(b)queueWeave(a.node,b);
       },
       cancel:({id})=>handAnchors.delete(id),
-      cancelAll:()=>{handAnchors.clear();handGrabs=[];handPoints=[];guideTarget=null;},
-      stretchStart:tracks=>{
-        if(repairBusy()){handGrabs=[];return;}
-        handAnchors.clear();const selected=new Set();handGrabs=[];
-        for(const t of tracks){const p=position(t),node=web.nearest(p.x,p.y,90);if(node&&!selected.has(node.id)){selected.add(node.id);handGrabs.push({id:t.id,node,...p});}}
-        if(handGrabs.length!==2){handGrabs=[];handControl.hint('双手稍微分开，再捏住蛛网');}
-      },
-      stretchMove:tracks=>{if(repairBusy()){handGrabs=[];return;}for(const grab of handGrabs){const t=tracks.find(t=>t.id===grab.id);if(t)Object.assign(grab,position(t));}if(handGrabs.length)handControl.hint('双手拉开，感受蛛丝的张力');},
+      cancelAll:()=>{handAnchors.clear();handGrabs=[];handPoints=[];guideTarget=null;guideUntil=0;},
+      stretchStart:grabHands,
+      stretchMove:tracks=>{if(!handGrabs.length)grabHands(tracks);for(const grab of handGrabs){const t=tracks.find(t=>t.id===grab.id);if(t)Object.assign(grab,position(t));}if(handGrabs.length)handControl.hint('双手拉开，感受蛛丝的张力');},
       stretchEnd:()=>{handGrabs=[];}
     });
   }
@@ -126,7 +125,7 @@
       }
     });
   }
-  function updateOriginalRepair(dt){
+  function updateOriginalRepair(dt,allowRepair=true,allowWander=true){
     if(spider.target?.active){spider.target=null;spider.repairing=false;}
     if(spider.repairing){
       const target=spider.bridgeTo,from=spider.node;
@@ -136,7 +135,7 @@
       if(t>=1){web.repair(spider.target);spider.node=target;spider.target=null;spider.repairing=false;spider.wait=.3;}
       return;
     }
-    if(!spider.next&&web.broken.length&&!spider.target){spider.path=[];routeToRepair();}
+    if(allowRepair&&!spider.next&&web.broken.length&&!spider.target){spider.path=[];routeToRepair();}
     if(!spider.next&&spider.path.length){
       const next=spider.path.shift();
       if(!spider.node.adj.some(e=>e.active&&(e.a===next||e.b===next))){spider.path=[];spider.target=null;return;}
@@ -153,16 +152,28 @@
     }
     spider.x=spider.node.x;spider.y=spider.node.y;
     if(spider.target){spider.repairing=true;spider.repairProgress=0;return;}
+    if(!allowWander)return;
     spider.wait-=dt;if(spider.wait>0)return;
     const candidates=web.nodes.filter(n=>n.x>web.w*.38&&n.x<web.w*.94&&n.y>web.h*.13&&n.y<web.h*.83&&!n.fixed);
     if(candidates.length)spider.path=web.route(spider.node,candidates[Math.floor(web.random()*candidates.length)])||[];
     spider.wait=1+web.random()*2;
   }
   function updateSpider(dt){
-    if(manualWeave&&repairBusy()&&manualWeave.phase!=='return'){
-      if(manualWeave.phase==='approach'){
-        weaveQueue.unshift(manualWeave.edge);manualWeave=null;spider.path=[];
-      }else manualWeave.phase='return';
+    const guiding=guideTarget&&performance.now()<guideUntil;
+    const wantsWeave=weaveQueue.some(e=>!e.active&&(web.route(spider.node,e.a)!==null||web.route(spider.node,e.b)!==null));
+    if((guiding||wantsWeave)&&spider.target){
+      // Leave an unfinished strand broken; return along that span without
+      // teleporting, then give user input priority over automatic repair.
+      if(spider.repairing)repairReturn={a:spider.node,b:spider.bridgeTo,progress:spider.repairProgress,direction:spider.repairProgress<.5?-1:1};
+      spider.target=null;spider.repairing=false;spider.bridgeTo=null;spider.path=[];
+    }
+    if(repairReturn){
+      const task=repairReturn,length=Math.max(1,Math.hypot(task.b.x-task.a.x,task.b.y-task.a.y));
+      task.progress=Math.max(0,Math.min(1,task.progress+task.direction*dt*180/length));
+      spider.x=task.a.x+(task.b.x-task.a.x)*task.progress;spider.y=task.a.y+(task.b.y-task.a.y)*task.progress;
+      spider.angle=Math.atan2((task.b.y-task.a.y)*task.direction,(task.b.x-task.a.x)*task.direction)+Math.PI/2;
+      if(task.progress===0||task.progress===1){spider.node=task.progress===0?task.a:task.b;repairReturn=null;}
+      return;
     }
     if(manualWeave){
       const task=manualWeave;
@@ -174,7 +185,7 @@
             if(path===null){weaveQueue.unshift(task.edge);manualWeave=null;return;}
             spider.path=path;
           }
-          updateOriginalRepair(dt);return;
+          updateOriginalRepair(dt,false,false);return;
         }
       }
       const length=Math.max(1,Math.hypot(task.end.x-task.start.x,task.end.y-task.start.y));
@@ -186,14 +197,12 @@
       else if(task.progress===1){task.edge.active=true;task.edge.pending=false;task.edge.age=0;spider.node=task.end;manualWeave=null;spider.path=[];spider.wait=.3;}
       return;
     }
-    if(repairBusy()){
-      // A camera frame cannot replace the old repair target, stretch its
-      // endpoints, or add work while the original repair routine is running.
-      guideTarget=null;handAnchors.clear();handGrabs=[];
-      updateOriginalRepair(dt);return;
-    }
     if(weaveQueue.length&&!spider.next&&routeToWeave())return;
-    if(guideTarget&&!spider.next){spider.path=web.route(spider.node,guideTarget)||[];guideTarget=null;}
+    if(guiding){
+      if(!spider.next)spider.path=web.route(spider.node,guideTarget)||[];
+      updateOriginalRepair(dt,false,false);return;
+    }
+    guideTarget=null;
     updateOriginalRepair(dt);
   }
   function addRipple(x,y){ripples.push({x,y,age:0});}
@@ -256,7 +265,7 @@
   }
   function drawSpider(){
     ctx.save();ctx.translate(spider.x,spider.y);ctx.rotate(spider.angle);
-    const walking=spider.next||spider.repairing||manualWeave?.phase==='weave'||manualWeave?.phase==='return';const phase=walking?time*13:0;
+    const walking=spider.next||spider.repairing||repairReturn||manualWeave?.phase==='weave'||manualWeave?.phase==='return';const phase=walking?time*13:0;
     ctx.strokeStyle='rgba(215,226,215,.9)';ctx.lineWidth=.95;ctx.shadowColor='#dcebd0';ctx.shadowBlur=3;
     for(let side=-1;side<=1;side+=2){for(let leg=0;leg<4;leg++){
       const walk=walking?Math.sin(phase+leg*1.65+side)*1.8:Math.sin(time*1.4+leg)*.25;
@@ -295,7 +304,7 @@
   function status(){
     const percent=Math.round(web.integrity*1000)/10;
     $('integrity').textContent=percent===100?'100':percent.toFixed(1);$('integrity-bar').style.width=percent+'%';
-    const message=paused?'时间暂时停留':spider.repairing?'小蜘蛛正在牵丝修补':spider.target?'小蜘蛛正在赶往破口':manualWeave?(manualWeave.phase==='return'?'正在返回网面，准备修补':manualWeave.phase==='approach'?'正在前往牵丝起点':'小蜘蛛正在牵新丝'):'小蜘蛛正在巡视';
+    const message=paused?'时间暂时停留':repairReturn?'小蜘蛛正在转向你的手势':spider.repairing?'小蜘蛛正在牵丝修补':spider.target?'小蜘蛛正在赶往破口':manualWeave?(manualWeave.phase==='return'?'正在返回网面，准备修补':manualWeave.phase==='approach'?'正在前往牵丝起点':'小蜘蛛正在牵新丝'):guideTarget&&performance.now()<guideUntil?'小蜘蛛正在跟随食指':'小蜘蛛正在巡视';
     if(message!==lastStatus){$('spider-state').textContent=message;lastStatus=message;}
   }
   new p5(p=>{
