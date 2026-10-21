@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#202225">
+  <meta name="description" content="织住时间，一场关于编织、风与修补的互动。用鼠标轻牵蛛丝，看小蜘蛛重新连接。">
+  <title>织住时间 · Weaving Time</title>
+  <link rel="stylesheet" href="style.css">
+  <script defer src="vendor/p5.min.js"></script>
+  <script defer src="web-physics.js"></script>
+  <script defer src="hand-gestures.js"></script>
+  <script defer src="hand-controller.js"></script>
+  <script defer src="breath-controller.js"></script>
+  <script defer src="sketch.js"></script>
+</head>
+<body class="is-launch">
+  <main id="experience" aria-label="织住时间互动蛛网">
+    <div id="canvas-holder" inert aria-hidden="true" aria-label="拖动蛛丝，轻触震动；使用下方按钮制造风或重新织网"></div>
+    <div class="vignette" aria-hidden="true"></div>
+    <header>
+      <button class="wordmark" id="home" type="button" aria-label="返回作品介绍"><span class="mark" aria-hidden="true">✳</span> WEAVING TIME</button>
+      <div class="edition"><span class="live-dot"></span> 交互习作 <span class="edition-number">NO. 001</span></div>
+    </header>
+    <section class="launch-screen" id="launch-screen" aria-labelledby="launch-title">
+      <div class="intro">
+        <div class="eyebrow">A SMALL WORLD, WOVEN SLOWLY</div>
+        <h1 id="launch-title">织住时间<span class="title-dot">。</span></h1>
+        <p class="subtitle">每一次断裂，都有新的连接。</p>
+        <div class="intro-line"></div>
+        <p class="description">轻牵一根丝，让涟漪经过整张网。<br>留一点时间，看它慢慢修补。</p>
+        <button class="start-button" id="start" type="button" disabled><span>开始编织</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg></button>
+        <p class="launch-hint">用鼠标或双手编织，也可以对着麦克风吹起一阵风。</p>
+      </div>
+      <span class="launch-caption" aria-hidden="true">SILK / WIND / TIME</span>
+    </section>
+    <aside class="readout" id="web-readout" inert aria-hidden="true" aria-label="蛛网状态">
+      <span class="tiny-label">THE WEB REMEMBERS</span>
+      <div><span id="integrity">100</span><span class="percent">%</span><span class="readout-caption">连接完整度</span></div>
+      <div class="integrity-track"><i id="integrity-bar"></i></div>
+      <p id="spider-state">小蜘蛛正在巡视</p>
+    </aside>
+    <div class="cursor-ring" id="cursor-ring" aria-hidden="true"></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <aside class="hand-panel" id="hand-panel" hidden aria-label="手势控制与摄像头预览">
+      <div class="hand-panel-title"><span class="live-dot"></span><span id="hand-status" role="status" aria-live="polite">准备手势识别</span><button id="hand-close" class="icon-button" type="button" aria-label="关闭手势与摄像头">×</button></div>
+      <div class="camera-frame"><video id="hand-video" autoplay muted playsinline aria-label="镜像摄像头预览"></video><canvas id="hand-preview" width="320" height="240" aria-hidden="true"></canvas></div>
+      <div class="gesture-feedback" id="gesture-feedback" role="status">让双手进入画面</div>
+      <dl class="gesture-guide"><div><dt>食指移动</dt><dd>引导蜘蛛</dd></div><div><dt>捏合 → 移动 → 松开</dt><dd>牵丝连接</dd></div><div><dt>双手捏合并拉开</dt><dd>拉伸蛛网</dd></div></dl>
+      <p class="camera-note">画面仅在本机处理 · 不上传、不录制</p>
+    </aside>
+    <aside class="breath-panel" id="breath-panel" hidden aria-label="吹气控制">
+      <div class="hand-panel-title"><span class="live-dot"></span><span id="breath-status" role="status" aria-live="polite">准备吹气识别</span><button id="breath-close" class="icon-button" type="button" aria-label="关闭吹气与麦克风">×</button></div>
+      <p id="breath-hint" class="breath-hint">对着麦克风吹一口气，让风经过蛛网。</p>
+      <div class="breath-meter" id="breath-meter" role="meter" aria-label="麦克风声音强度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="breath-meter-fill"></i></div>
+      <div class="breath-meter-label"><span>气流声</span><span id="breath-feedback" role="status" aria-live="polite">等待开启</span></div>
+      <label class="sensitivity-label" for="breath-sensitivity">灵敏度 <output id="breath-sensitivity-value" for="breath-sensitivity">60</output></label>
+      <input id="breath-sensitivity" type="range" min="0" max="100" value="60">
+      <p class="breath-tip">吹不动就调高，容易误触就调低。</p>
+      <button id="breath-calibrate" class="calibrate-button" type="button">重新校准环境声</button>
+      <p class="camera-note">声音仅在本机分析 · 不录音、不上传</p>
+    </aside>
+    <footer id="experience-controls" inert aria-hidden="true">
+      <div class="instructions"><span class="mouse-icon" aria-hidden="true"></span><span><b>按住拖动</b> 牵引蛛丝 <span class="separator">/</span> 拉远使它断开</span></div>
+      <div class="controls" aria-label="互动控制">
+        <button id="hands" type="button" aria-pressed="false" aria-controls="hand-panel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 12V5a1.5 1.5 0 0 1 3 0v6-8a1.5 1.5 0 0 1 3 0v8-6a1.5 1.5 0 0 1 3 0v7-3a1.5 1.5 0 0 1 3 0v7c0 4-3 6-7 6-3 0-5-2-7-5l-3-4a1.5 1.5 0 0 1 2-2l3 3"/></svg><span id="hands-label">开启手势</span></button>
+        <span class="control-divider"></span>
+        <button id="breath" type="button" aria-pressed="false" aria-controls="breath-panel"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3m-3 0h6"/></svg><span id="breath-label">开启吹气</span></button>
+        <span class="control-divider"></span>
+        <button id="wind" type="button" title="吹一阵风（W）"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h12a3 3 0 1 0-3-3M3 12h16a2 2 0 1 1-2 2M3 16h7a2 2 0 1 1-2 2"/></svg><span>吹一阵风</span><kbd>W</kbd></button>
+        <span class="control-divider"></span>
+        <button id="reset" type="button" title="重新织网（R）"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9a8 8 0 1 1 0 6M4 4v5h5"/></svg><span>重新织网</span></button>
+        <button id="pause" class="icon-button" type="button" aria-label="暂停动画" aria-pressed="false" title="暂停 / 继续（空格）"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg></button>
+      </div>
+      <div class="stage-note"><span>02</span> 以手牵丝 <i>·</i> <span id="input-mode">鼠标模式</span></div>
+    </footer>
+    <div id="loading" role="status">正在牵起第一根丝…</div>
+    <noscript>请启用 JavaScript，以体验互动蛛网。</noscript>
+  </main>
+</body>
+</html>
