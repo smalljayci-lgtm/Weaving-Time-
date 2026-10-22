@@ -34,7 +34,9 @@
       this.stop(false);
       const messages={NotAllowedError:'摄像头未获授权，请允许后重试。',NotFoundError:'没有找到摄像头，仍可用鼠标体验。',NotReadableError:'摄像头正被占用，请关闭其他相机应用。',SecurityError:'请通过本机 Live Server 或 HTTPS 打开。'};
       if(/activeTexture|WebGL|OpenGL|GPU context/i.test(error.message))error.userMessage='浏览器图形加速不可用，请在 Chrome 或 Edge 开启硬件加速后重试。';
-      this.status('手势暂未开启');this.hint(messages[error.name]||error.userMessage||'识别加载失败，请刷新后重试；鼠标仍可使用。');
+      if(/^ASSET_/.test(error.code||''))error.userMessage=error.message;
+      if(error.code==='MODEL_INIT'&&!error.userMessage)error.userMessage='资源已下载，但识别引擎启动失败。请使用新版 Chrome 或 Edge，确认已开启图形加速。';
+      this.status('手势暂未开启');this.hint(messages[error.name]||error.userMessage||`识别启动失败：${error.message.slice(0,160)}。可再次点击开启手势。`);
       if(!messages[error.name]&&!error.userMessage)console.warn('Hand tracking:',error.message);
     }
     async start(){
@@ -45,15 +47,31 @@
       try{
         if(location.protocol==='file:'||!window.isSecureContext||!navigator.mediaDevices?.getUserMedia){const e=new Error('Local HTTP server required');e.userMessage='请在 VS Code 中用 Live Server 打开网页，再开启手势。';throw e;}
         if(!window.Worker||!window.createImageBitmap){const e=new Error('Browser unsupported');e.userMessage='当前浏览器不支持手势识别，请使用新版 Chrome 或 Edge。';throw e;}
-        this.worker=new Worker(new URL('hands-worker.js',document.baseURI));
+        this.status('等待摄像头授权…');this.hint('请允许摄像头；识别资源将在授权后加载');
+        const stream=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:640},height:{ideal:480},facingMode:'user',frameRate:{ideal:24,max:30}},audio:false});
+        if(session!==this.session){stream.getTracks().forEach(t=>t.stop());return;}
+        this.stream=stream;this.video.srcObject=stream;await this.video.play();
+        if(session!==this.session)return;
+        for(const track of stream.getVideoTracks())track.onended=()=>{if(this.enabled)this.fail(Object.assign(new Error('Camera disconnected'),{userMessage:'摄像头已断开，可重新开启或继续用鼠标。'}));};
+        this.status('准备识别资源…');this.hint('摄像头已开启。首次需加载约 19 MB，下载完成的资源会保存在本机。');
+        this.worker=new Worker(new URL('hands-worker.js?v=20261022-2',document.baseURI));
         await new Promise((resolve,reject)=>{
           this.rejectReady=reject;
-          this.initTimer=setTimeout(()=>reject(new Error('Model initialization timed out')),45000);
+          this.initTimer=setTimeout(()=>reject(Object.assign(new Error('Model loading timed out'),{userMessage:'资源加载超过 5 分钟，请再次开启手势；已下载完成的文件会保留。'})),300000);
           this.worker.onerror=e=>{const error=new Error(e.message||'Worker failed');if(this.rejectReady){reject(error);}else if(this.enabled)this.fail(error);};
           this.worker.onmessage=({data})=>{
             if(session!==this.session)return;
             if(data.type==='ready'){clearTimeout(this.initTimer);this.rejectReady=null;resolve();}
-            else if(data.type==='error'){const error=new Error(data.message);if(this.rejectReady)reject(error);else this.fail(error);}
+            else if(data.type==='progress'){
+              if(data.phase==='initialize'){
+                this.status('资源已就绪，正在启动识别…');this.hint('正在准备手势识别，请稍候');
+                clearTimeout(this.initTimer);this.initTimer=setTimeout(()=>reject(Object.assign(new Error('Model initialization timed out'),{code:'MODEL_INIT'})),60000);
+              }else{
+                const percent=Math.min(100,Math.floor(data.loaded/data.total*100));
+                this.status(`下载识别资源 ${percent}%`);this.hint(`${(data.loaded/1048576).toFixed(1)} / ${(data.total/1048576).toFixed(1)} MB · 已完成的资源会自动保留`);
+              }
+            }
+            else if(data.type==='error'){const error=Object.assign(new Error(data.message),{code:data.code});if(this.rejectReady)reject(error);else this.fail(error);}
             else if(data.type==='result'){
               clearTimeout(this.frameTimer);this.processing=false;
               this.drawPreview(data.result);
@@ -64,12 +82,6 @@
           this.worker.postMessage({type:'init'});
         });
         if(session!==this.session)return;
-        this.status('等待摄像头授权…');this.hint('请在浏览器提示中允许使用摄像头');
-        const stream=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:640},height:{ideal:480},facingMode:'user',frameRate:{ideal:24,max:30}},audio:false});
-        if(session!==this.session){stream.getTracks().forEach(t=>t.stop());return;}
-        this.stream=stream;this.video.srcObject=stream;await this.video.play();
-        if(session!==this.session)return;
-        for(const track of stream.getVideoTracks())track.onended=()=>{if(this.enabled)this.fail(Object.assign(new Error('Camera disconnected'),{userMessage:'摄像头已断开，可重新开启或继续用鼠标。'}));};
         this.processing=false;this.lastFrame=0;
         this.callbacks.modeChanged?.();this.status('寻找双手…');this.hint('食指引路，捏合牵丝');
         const pump=async now=>{
