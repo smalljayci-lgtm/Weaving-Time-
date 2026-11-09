@@ -12,6 +12,7 @@
   <script defer src="hand-gestures.js"></script>
   <script defer src="hand-controller.js?v=20261022-2"></script>
   <script defer src="breath-controller.js"></script>
+  <script defer src="season-debris.js"></script>
   <script defer src="sketch.js"></script>
 </head>
 <body class="is-launch">
@@ -39,6 +40,11 @@
       <div><span id="integrity">100</span><span class="percent">%</span><span class="readout-caption">连接完整度</span></div>
       <div class="integrity-track"><i id="integrity-bar"></i></div>
       <p id="spider-state">小蜘蛛正在巡视</p>
+      <div class="season-readout">
+        <div><span class="tiny-label" id="season-en">SPRING</span><strong id="season-name" aria-live="polite">春 · 花瓣</strong></div>
+        <button id="season-next" type="button" title="切换到下一季">下一季 <span aria-hidden="true">↗</span></button>
+      </div>
+      <p id="debris-count">风中 0 · 挂网 0</p>
     </aside>
     <div class="cursor-ring" id="cursor-ring" aria-hidden="true"></div>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>

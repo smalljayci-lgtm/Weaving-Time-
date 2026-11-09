@@ -32,7 +32,7 @@
     breakEdge(e){if(!e.active)return;e.active=false;e.age=0;this.broken.push(e);const dx=(e.b.x-e.a.x)*.06,dy=(e.b.y-e.a.y)*.06;if(!e.a.fixed){e.a.px-=dx;e.a.py-=dy;}if(!e.b.fixed){e.b.px+=dx;e.b.py+=dy;}}
     repair(e){if(e.active)return;e.active=true;e.age=0;this.broken=this.broken.filter(b=>b!==e);}
     blow(strength=1){this.gust=Math.max(.35,Math.min(1.4,strength));}
-    step(dt,drag=null,allowTearing=true){
+    step(dt,drag=null,allowTearing=true,loads=null){
       const speed=Math.min(dt,1.5);this.clock+=speed/60;
       const grabs=Array.isArray(drag)?drag:drag?[drag]:[];
       const gust=this.gust;this.gust=Math.max(0,this.gust-.009*speed);
@@ -42,7 +42,7 @@
         n.px=n.x;n.py=n.y;
         const wave=Math.sin(n.oy*.009-this.clock*3);
         n.x+=vx+((n.ox-n.x)*.0014+Math.sin(this.clock*.7+n.oy*.007)*.004+gust*(.9+wave*.4))*speed*speed;
-        n.y+=vy+((n.oy-n.y)*.0014+.018+gust*Math.sin(n.ox*.006-this.clock*3)*.3)*speed*speed;
+        n.y+=vy+((n.oy-n.y)*.0014+.018+gust*Math.sin(n.ox*.006-this.clock*3)*.3+(loads?.get(n)||0))*speed*speed;
       }
       let torn=0;
       if(allowTearing){

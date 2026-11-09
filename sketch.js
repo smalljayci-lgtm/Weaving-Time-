@@ -3,7 +3,7 @@
   'use strict';
   const $=id=>document.getElementById(id);
   const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let web,ctx,spider,drag=null,hover=null,dust=[],ornaments=[],ripples=[],scraps=[];
+  let web,ctx,spider,debris,drag=null,hover=null,dust=[],ornaments=[],ripples=[],scraps=[];
   let paused=reduced,time=0,pointer={x:-100,y:-100},lastStatus='',resizeTimer,toastTimer;
   let canvasElement,entered=false;
   let handControl,breathControl,handPoints=[],handGrabs=[],handAnchors=new Map(),weaveQueue=[],guideTarget=null,lastGuide=0;
@@ -25,7 +25,7 @@
   function toast(message){$('toast').textContent=message;$('toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('visible'),2800);}
   function newWorld(w,h){
     handControl?.cancelInteraction();breathControl?.resetGate();weaveQueue=[];wovenThreads=[];manualWeave=null;repairReturn=null;guideTarget=null;guideUntil=0;
-    web=new SilkWeb(w,h,1701);drag=null;hover=null;ripples=[];scraps=[];
+    web=new SilkWeb(w,h,1701);debris=new SeasonDebris();drag=null;hover=null;ripples=[];scraps=[];
     spider={node:web.nearest(w*.66,h*.65,Infinity),path:[],next:null,walkEdge:null,progress:0,target:null,approach:null,repairing:false,repairProgress:0,x:0,y:0,angle:0,wait:1};
     spider.x=spider.node.x;spider.y=spider.node.y;
     dust=Array.from({length:95},()=>({x:web.random()*w,y:web.random()*h,r:.3+web.random()*1.2,speed:.7+web.random()*1.2,phase:web.random()*6.28}));
@@ -121,7 +121,7 @@
       modeChanged:updateInputMode,
       wind:({strength,start})=>{
         if(!entered||paused)return;
-        web.blow(strength);if(start)toast('气息化成了风。');
+        web.blow(strength);if(start){debris.burst(strength);toast('气息化成了风，带来了新的来客。');}
       }
     });
   }
@@ -206,11 +206,12 @@
     updateOriginalRepair(dt);
   }
   function addRipple(x,y){ripples.push({x,y,age:0});}
-  function blow(strength=1){if(!entered)return;if(typeof strength!=='number')strength=1;if(paused)setPaused(false);web.blow(strength);toast('风经过了，留一点时间让它修补。');}
+  function blow(strength=1){if(!entered)return;if(typeof strength!=='number')strength=1;if(paused)setPaused(false);web.blow(strength);debris.burst(strength);toast('风带来了一些东西，看它们落在哪里。');}
   function setPaused(value){paused=value;if(value){drag=null;handControl?.cancelInteraction();breathControl?.resetGate();}$('pause').setAttribute('aria-pressed',String(paused));$('pause').setAttribute('aria-label',paused?'继续动画':'暂停动画');$('pause').innerHTML=paused?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 10 7-10 7Z"/></svg>':'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg>';}
   function update(dt){
     const oldBroken=new Set(web.broken.map(e=>e.id));
-    web.step(dt*60,drag?[drag]:handGrabs);
+    debris.update(dt,web,{catchSilk:addRipple});
+    web.step(dt*60,drag?[drag]:handGrabs,true,debris.loads);
     for(const e of web.broken)if(!oldBroken.has(e.id)){
       const x=(e.a.x+e.b.x)/2,y=(e.a.y+e.b.y)/2;
       addRipple(x,y);for(let i=0;i<4;i++)scraps.push({x,y,vx:(web.random()-.5)*55,vy:-web.random()*30,age:0});
@@ -229,6 +230,8 @@
     ctx.fillStyle='#202225';ctx.fillRect(0,0,w,h);
     const g=ctx.createRadialGradient(w*.55,h*.43,0,w*.55,h*.43,Math.max(w,h)*.8);
     g.addColorStop(0,'#333a39');g.addColorStop(.45,'#282e2e');g.addColorStop(1,'#1d2023');ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+    const wash=debris.wash,tint=ctx.createRadialGradient(w*.35,h*.47,0,w*.35,h*.47,Math.max(w,h)*.69);
+    tint.addColorStop(0,`rgba(${wash},.105)`);tint.addColorStop(1,`rgba(${wash},0)`);ctx.fillStyle=tint;ctx.fillRect(0,0,w,h);
     for(const d of dust){const a=(.14+Math.sin(time*.35+d.phase)*.07);ctx.fillStyle=`rgba(205,214,190,${a})`;ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,Math.PI*2);ctx.fill();}
   }
   function strokeEdge(e){
@@ -253,7 +256,7 @@
   }
   function drawOrnaments(){
     for(const o of ornaments){const n=o.fall||o.node;if(n.y>web.h+30)continue;
-      ctx.save();ctx.translate(n.x,n.y);ctx.rotate(o.angle+Math.sin(time*.7+o.phase)*.18+(o.fall?time*.5:0));
+      ctx.save();ctx.globalAlpha=.54;ctx.translate(n.x,n.y);ctx.rotate(o.angle+Math.sin(time*.7+o.phase)*.18+(o.fall?time*.5:0));
       const s=o.size;
       ctx.shadowColor='#d3bb7a';ctx.shadowBlur=3;
       if(o.kind===0){
@@ -306,6 +309,11 @@
     $('integrity').textContent=percent===100?'100':percent.toFixed(1);$('integrity-bar').style.width=percent+'%';
     const message=paused?'时间暂时停留':repairReturn?'小蜘蛛正在转向你的手势':spider.repairing?'小蜘蛛正在牵丝修补':spider.target?'小蜘蛛正在赶往破口':manualWeave?(manualWeave.phase==='return'?'正在返回网面，准备修补':manualWeave.phase==='approach'?'正在前往牵丝起点':'小蜘蛛正在牵新丝'):guideTarget&&performance.now()<guideUntil?'小蜘蛛正在跟随食指':'小蜘蛛正在巡视';
     if(message!==lastStatus){$('spider-state').textContent=message;lastStatus=message;}
+    if($('season-en').textContent!==debris.season.en){$('season-en').textContent=debris.season.en;$('season-name').textContent=debris.season.name;}
+    $('season-name').style.color=debris.season.light;
+    const caught=debris.items.filter(item=>item.edge?.active).length,drifting=debris.items.filter(item=>!item.edge&&!item.falling).length;
+    const count=`风中 ${drifting} · 挂网 ${caught}`;
+    if($('debris-count').textContent!==count)$('debris-count').textContent=count;
   }
   new p5(p=>{
     p.setup=()=>{
@@ -330,16 +338,17 @@
       const release=()=>{drag=null;$('cursor-ring').classList.remove('grabbing');};
       canvasElement.addEventListener('pointerup',release);canvasElement.addEventListener('pointercancel',release);canvasElement.addEventListener('lostpointercapture',release);canvasElement.addEventListener('pointerleave',()=>{hover=null;$('cursor-ring').style.opacity='0';});
       $('wind').addEventListener('click',blow);
+      $('season-next').addEventListener('click',()=>{if(!entered)return;if(paused)setPaused(false);debris.next();status();});
       $('reset').addEventListener('click',()=>{newWorld(p.width,p.height);toast('重新牵起一张网。');});
       $('pause').addEventListener('click',()=>setPaused(!paused));
-      window.addEventListener('keydown',e=>{if(e.code==='Escape'&&entered){e.preventDefault();showLaunch(true);return;}if(!entered||e.repeat||e.ctrlKey||e.metaKey||e.altKey||/INPUT|TEXTAREA|BUTTON|A/.test(e.target.tagName))return;if(e.code==='KeyW')blow();if(e.code==='KeyR')$('reset').click();if(e.code==='Space'){e.preventDefault();setPaused(!paused);}});
+      window.addEventListener('keydown',e=>{if(e.code==='Escape'&&entered){e.preventDefault();showLaunch(true);return;}if(!entered||e.repeat||e.ctrlKey||e.metaKey||e.altKey||/^(INPUT|TEXTAREA|BUTTON|A|SELECT)$/.test(e.target.tagName))return;if(e.code==='KeyW')blow();if(e.code==='KeyR')$('reset').click();if(e.code==='Space'){e.preventDefault();setPaused(!paused);}});
       document.addEventListener('visibilitychange',()=>{if(document.hidden)drag=null;});
-      window.__weaving={get web(){return web;},get spider(){return spider;},get paused(){return paused;},get drag(){return drag;},get controller(){return handControl;},get breath(){return breathControl;},get threads(){return wovenThreads;},queueWeave,blow,pause:setPaused,reset:()=>newWorld(p.width,p.height),get stats(){return{nodes:web.nodes.length,edges:web.edges.length,broken:web.broken.length,queued:weaveQueue.length,woven:wovenThreads.filter(e=>e.active).length,hands:handPoints.length,integrity:web.integrity,spider:{x:spider.x,y:spider.y,repairing:spider.repairing},fps:Math.round(p.frameRate())};}};
+      window.__weaving={get web(){return web;},get spider(){return spider;},get debris(){return debris;},get paused(){return paused;},get drag(){return drag;},get controller(){return handControl;},get breath(){return breathControl;},get threads(){return wovenThreads;},queueWeave,blow,pause:setPaused,reset:()=>newWorld(p.width,p.height),get stats(){return{nodes:web.nodes.length,edges:web.edges.length,broken:web.broken.length,queued:weaveQueue.length,woven:wovenThreads.filter(e=>e.active).length,hands:handPoints.length,integrity:web.integrity,spider:{x:spider.x,y:spider.y,repairing:spider.repairing},fps:Math.round(p.frameRate())};}};
     };
     p.draw=()=>{
       if(!web)return;const dt=Math.min(p.deltaTime/1000,.033);
       if(entered&&!paused&&!document.hidden){time+=dt;update(dt);}
-      background(p.width,p.height);drawWeb();drawOrnaments();drawEffects();drawSpider();drawHandInteraction();
+      background(p.width,p.height);drawWeb();drawOrnaments();drawEffects();debris.draw(ctx);drawSpider();drawHandInteraction();
       if(p.frameCount%12===0)status();
     };
     p.windowResized=()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{
@@ -350,6 +359,7 @@
       for(const n of web.nodes){for(const k of ['x','px','ox'])n[k]*=w/oldW;for(const k of ['y','py','oy'])n[k]*=h/oldH;}
       for(const e of web.edges)e.rest=Math.hypot(e.a.ox-e.b.ox,e.a.oy-e.b.oy);
       for(const d of dust){d.x*=w/oldW;d.y*=h/oldH;}for(const o of ornaments)if(o.fall){o.fall.x*=w/oldW;o.fall.y*=h/oldH;}
+      debris.resize(w/oldW,h/oldH);
       spider.x*=w/oldW;spider.y*=h/oldH;drag=null;
     },160);};
   });
